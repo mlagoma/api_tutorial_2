@@ -35,8 +35,15 @@ async fn create(
 }
 
 #[get("/tweets/{id}")]
-async fn show(id: web::Path<String>) -> impl Responder {
-  HttpResponse::Ok().body(format!("Tweet#show {}", id))
+async fn show(id: web::Path<i32>, pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
+  let tweet = web::block(move || {
+    let conn = pool.get()?;
+    find_by_id(id.into_inner(), &conn)
+  })
+  .await?
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+
+  Ok(HttpResponse::Ok().json(tweet))
 }
 
 #[put("/tweets/{id}")]
@@ -68,4 +75,15 @@ fn find_all(conn: &PgConnection) -> Result<Vec<Tweet>, DbError> {
 
   let items = tweets.load::<Tweet>(conn)?;
   Ok(items)
+}
+
+fn find_by_id(tweet_id: i32, conn: &PgConnection) -> Result<Option<Tweet>, DbError> {
+  use crate::schema::tweets::dsl::*;
+
+  let tweet = tweets
+    .filter(id.eq(tweet_id))
+    .first::<Tweet>(conn)
+    .optional()?;
+
+  Ok(tweet)
 }
