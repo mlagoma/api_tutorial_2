@@ -63,8 +63,16 @@ async fn update(
 }
 
 #[delete("/tweets/{id}")]
-async fn destroy(id: web::Path<String>) -> impl Responder {
-  HttpResponse::Ok().body(format!("Tweet#delete {}", id))
+async fn destroy(id: web::Path<i32>, pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
+  let result = web::block(move || {
+    let conn = pool.get()?;
+    delete_tweet(id.into_inner(), &conn)
+  })
+  .await?
+  .map(|tweet| HttpResponse::Ok().json(tweet))
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+
+  Ok(result)
 }
 
 fn add_a_tweet(_message: &str, conn: &PgConnection) -> Result<Tweet, DbError> {
@@ -106,4 +114,11 @@ fn update_tweet(tweet_id: i32, _message: String, conn: &PgConnection) -> Result<
     .set(message.eq(_message))
     .get_result::<Tweet>(conn)?;
   Ok(tweet)
+}
+
+fn delete_tweet(tweet_id: i32, conn: &PgConnection) -> Result<usize, DbError> {
+  use crate::schema::tweets::dsl::*;
+
+  let count = diesel::delete(tweets.find(tweet_id)).execute(conn)?;
+  Ok(count)
 }
