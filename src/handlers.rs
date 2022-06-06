@@ -8,8 +8,15 @@ use crate::models::{NewTweet, Tweet, TweetPayload};
 type DbError = Box<dyn std::error::Error + Send + Sync>;
 
 #[get("/tweets")]
-async fn index() -> impl Responder {
-  HttpResponse::Ok().body("Tweet#index")
+async fn index(pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
+  let tweets = web::block(move || {
+    let conn = pool.get()?;
+    find_all(&conn)
+  })
+  .await?
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+
+  Ok(HttpResponse::Ok().json(tweets))
 }
 
 #[post("/tweets")]
@@ -54,4 +61,11 @@ fn add_a_tweet(_message: &str, conn: &PgConnection) -> Result<Tweet, DbError> {
     .values(&new_tweet)
     .get_result(conn)?;
   Ok(res)
+}
+
+fn find_all(conn: &PgConnection) -> Result<Vec<Tweet>, DbError> {
+  use crate::schema::tweets::dsl::*;
+
+  let items = tweets.load::<Tweet>(conn)?;
+  Ok(items)
 }
