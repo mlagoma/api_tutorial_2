@@ -47,8 +47,19 @@ async fn show(id: web::Path<i32>, pool: web::Data<DbPool>) -> Result<HttpRespons
 }
 
 #[put("/tweets/{id}")]
-async fn update(id: web::Path<String>) -> impl Responder {
-  HttpResponse::Ok().body(format!("Tweet#edit {}", id))
+async fn update(
+  id: web::Path<i32>,
+  payload: web::Json<TweetPayload>,
+  pool: web::Data<DbPool>,
+) -> Result<HttpResponse, Error> {
+  let tweet = web::block(move || {
+    let conn = pool.get()?;
+    update_tweet(id.into_inner(), payload.message.clone(), &conn)
+  })
+  .await?
+  .map_err(actix_web::error::ErrorInternalServerError)?;
+
+  Ok(HttpResponse::Ok().json(tweet))
 }
 
 #[delete("/tweets/{id}")]
@@ -85,5 +96,14 @@ fn find_by_id(tweet_id: i32, conn: &PgConnection) -> Result<Option<Tweet>, DbErr
     .first::<Tweet>(conn)
     .optional()?;
 
+  Ok(tweet)
+}
+
+fn update_tweet(tweet_id: i32, _message: String, conn: &PgConnection) -> Result<Tweet, DbError> {
+  use crate::schema::tweets::dsl::*;
+
+  let tweet = diesel::update(tweets.find(tweet_id))
+    .set(message.eq(_message))
+    .get_result::<Tweet>(conn)?;
   Ok(tweet)
 }
